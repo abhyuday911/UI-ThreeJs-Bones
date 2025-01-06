@@ -5,10 +5,65 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>bones</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="./style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body>
+    <main class="flex justify-center items-center h-screen relative">
+        <div class="absolute w-screen h-screen md:p-16 flex justify-between items-center pointer-events-none">
+            <div class="pointer-events-auto">
+                <div class="bg-gray-800 text-white p-5 rounded-lg shadow-lg space-y-4">
+                    <h2 class="text-xl font-semibold">Landmark Creation</h2>
+                    <div class="space-y-2">
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="femurCenter" class="landmarkRadioButton mr-3 scale-150" />
+                            Femur Center
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="hipCenter" class="landmarkRadioButton mr-3 scale-150" />
+                            Hip Center
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="femurProximalCanal" class="landmarkRadioButton mr-3 scale-150" />
+                            Femur Proximal Canal
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="femurDistalCanal" class="landmarkRadioButton mr-3 scale-150" />
+                            Femur Distal Canal
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="medialEpicondyle" class="landmarkRadioButton mr-3 scale-150" />
+                            Medial Epicondyle
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="lateralEpicondyle" class="landmarkRadioButton mr-3 scale-150" />
+                            Lateral Epicondyle
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="distalMedialPt" class="landmarkRadioButton mr-3 scale-150" />
+                            Distal Medial Pt
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="distalLateralPt" class="landmarkRadioButton mr-3 scale-150" />
+                            Distal Lateral Pt
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="posteriorMedialPt" class="landmarkRadioButton mr-3 scale-150" />
+                            Posterior Medial Pt
+                        </label>
+                        <label class="block text-gray-400 cursor-pointer">
+                            <input type="radio" id="posteriorLateralPt" class="landmarkRadioButton mr-3 scale-150" />
+                            Posterior Lateral Pt
+                        </label>
+                    </div>
+
+                </div>
+                <button class="bg-blue-500 text-white px-4 py-2 rounded-lg w-full mt-6">Update</button>
+            </div>
+
+        </div>
+    </main>
     <script type="module" src="./script.js"></script>
 </body>
 
