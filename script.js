@@ -25,7 +25,6 @@ function setupLighting() {
   const directionalLight = new THREE.DirectionalLight(0xffffff, 5);
   directionalLight.position.set(10, 10, -50).normalize();
   scene.add(directionalLight);
-
   const ambientLight = new THREE.AmbientLight(0xffffff, 1);
   scene.add(ambientLight);
 }
@@ -62,89 +61,103 @@ function fitCameraToObject(objects, camera, controls) {
 // Load STL models
 const loadedMeshes = [];
 function loadSTLModel(path, color) {
-  const loader = new STLLoader();
-  loader.load(path, (geometry) => {
+  new STLLoader().load(path, (geometry) => {
     const material = new THREE.MeshStandardMaterial({ color });
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
     loadedMeshes.push(mesh);
 
-    if (loadedMeshes.length === 2) {
+    if (loadedMeshes.length === 2)
       fitCameraToObject(loadedMeshes, camera, controls);
-    }
   });
 }
 
 loadSTLModel("./Right_Femur.stl", 0xa0a0a0);
 loadSTLModel("./Right_Tibia.stl", 0x00cc00);
 
-// Interactivity with landmarks
+// Landmark interaction setup
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const landmarks = new Map();
-
-// Check the active radio button
-let previouslyCheckedRadio = null; // To keep track of the last checked radio button
-
-function getActiveRadioButton() {
-  const radios = document.querySelectorAll(".landmarkRadioButton");
-  let activeRadio = null;
-
-  radios.forEach((radio) => {
-    if (radio.checked) {
-      activeRadio = radio; // Current active radio
-    }
-  });
-
-  // Handle the sphere colors
-  if (activeRadio && activeRadio !== previouslyCheckedRadio) {
-    if (previouslyCheckedRadio) {
-      // Change the color of the previously checked landmark to pink
-      const previousSphere = landmarks.get(previouslyCheckedRadio.id);
-      if (previousSphere) {
-        previousSphere.material.color.set(0xff00ff); // Pink
-      }
-      previouslyCheckedRadio.disabled = true; // Disable the previous radio
-    }
-
-    // Change the color of the currently active landmark to green
-    const activeSphere = landmarks.get(activeRadio.id);
-    if (activeSphere) {
-      activeSphere.material.color.set(0x00ff00); // Green
-    }
-
-    previouslyCheckedRadio = activeRadio; // Update the last checked radio reference
-  }
-
-  return activeRadio ? activeRadio.id : null; // Return the ID of the active radio button
-}
-
-// Function to create or update a landmark
-function createOrUpdateLandmark(position, name, color = 0xff0000) {
-  if (landmarks.has(name)) {
-    // Update existing landmark's position
-    landmarks.get(name).position.copy(position);
-  } else {
-    // Create a new landmark
-    const geometry = new THREE.SphereGeometry(2, 32, 32);
-    const material = new THREE.MeshStandardMaterial({ color });
-    const landmark = new THREE.Mesh(geometry, material);
-    landmark.name = name; // Store the name in the landmark
-    landmark.position.copy(position);
-    scene.add(landmark);
-    landmarks.set(name, landmark); // Add landmark to the map
-  }
-}
-
-// Mouse event listener for dragging landmarks
 let isDragging = false;
 let selectedLandmark = null;
+let lastClickedRadio = null;
 
-// Mouse event listener for placing landmarks
+function createOrUpdateLandmark(position, name, color = 0xff0000) {
+  const existingLandmark = landmarks.get(name);
+
+  if (existingLandmark) {
+    existingLandmark.position.copy(position);
+  } else {
+    const landmark = new THREE.Mesh(
+      new THREE.SphereGeometry(2, 32, 32),
+      new THREE.MeshStandardMaterial({ color })
+    );
+    landmark.name = name;
+    landmark.position.copy(position);
+    scene.add(landmark);
+    landmarks.set(name, landmark);
+  }
+}
+
+// Function to get the most recently clicked active radio button
+function getActiveRadioButton(landmarks) {
+  return lastClickedRadio ? lastClickedRadio.id : null;
+}
+
+// Function to update other radios and their corresponding landmarks
+function updateRadioStyles(landmarks) {
+  const radios = document.querySelectorAll(".landmarkRadioButton");
+
+  radios.forEach((radio) => {
+    // Skip the last clicked radio
+    if (radio === lastClickedRadio) return;
+
+    if (landmarks.has(radio.id)) {
+      // If the radio's value is in landmarks, add the Tailwind class
+      radio.classList.add("accent-slate-300");
+      const landmark = landmarks.get(radio.id);
+      if (landmark) {
+        landmark.material.color.set(0x0000aa); // Blue for inactive landmark
+      }
+    } else {
+      // Otherwise, uncheck it and remove the Tailwind class
+      radio.checked = false;
+      radio.classList.remove("accent-slate-300");
+    }
+  });
+}
+
+// Add a single event listener for radio button clicks
+document.addEventListener("click", (event) => {
+  const clickedElement = event.target;
+
+  // Check if the clicked element is a radio button
+  if (event.target.classList.contains("landmarkRadioButton")) {
+    lastClickedRadio = clickedElement; // Update the last clicked radio button
+    event.target.classList.remove("accent-slate-300");
+
+    // Update other radios based on their presence in landmarks
+    updateRadioStyles(landmarks);
+
+    // If the clicked radio has a corresponding landmark, color it green
+    if (landmarks.has(clickedElement.id)) {
+      const landmark = landmarks.get(clickedElement.id);
+      if (landmark) {
+        landmark.material.color.set(0xff0000); // Red for the active landmark
+      }
+    }
+  }
+});
+
+// Main interaction logic
 window.addEventListener("click", (event) => {
-  const activeRadio = getActiveRadioButton();
+  const activeRadio = getActiveRadioButton(landmarks);
+
   if (!activeRadio) return; // No active radio, skip
   if (landmarks.has(activeRadio)) return; // Landmark already exists, skip
+
+  // Calculate mouse position and set up raycasting
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
@@ -180,7 +193,16 @@ window.addEventListener("mousemove", (event) => {
 
   const intersects = raycaster.intersectObjects(loadedMeshes, true);
   if (intersects.length > 0) {
-    selectedLandmark.position.copy(intersects[0].point);
+    const newPosition = intersects[0].point;
+
+    // Update the 3D position of the landmark
+    selectedLandmark.position.copy(newPosition);
+
+    // Update the position in the landmarks map
+    if (landmarks.has(selectedLandmark.id)) {
+      const landmark = landmarks.get(selectedLandmark.id);
+      landmark.position.copy(newPosition); // Sync position with the map
+    }
   }
 });
 
@@ -210,7 +232,6 @@ function init() {
     controls.update();
     renderer.render(scene, camera);
   }
-
   animate();
 }
 
