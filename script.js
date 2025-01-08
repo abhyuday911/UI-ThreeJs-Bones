@@ -79,6 +79,7 @@ loadSTLModel("./Right_Tibia.stl", 0x00cc00);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const landmarks = new Map();
+const axisLines = new Map();
 let isDragging = false;
 let selectedLandmark = null;
 let lastClickedRadio = null;
@@ -184,6 +185,7 @@ window.addEventListener("mousedown", (event) => {
   }
 });
 
+// Update lines dynamically during dragging
 window.addEventListener("mousemove", (event) => {
   if (!isDragging || !selectedLandmark) return;
 
@@ -199,10 +201,13 @@ window.addEventListener("mousemove", (event) => {
     selectedLandmark.position.copy(newPosition);
 
     // Update the position in the landmarks map
-    if (landmarks.has(selectedLandmark.id)) {
-      const landmark = landmarks.get(selectedLandmark.id);
+    if (landmarks.has(selectedLandmark.name)) {
+      const landmark = landmarks.get(selectedLandmark.name);
       landmark.position.copy(newPosition); // Sync position with the map
     }
+
+    // Recalculate and update all lines
+    updateLines();
   }
 });
 
@@ -236,3 +241,190 @@ function init() {
 }
 
 init();
+
+// Create or update a line between two points
+function createOrUpdateLine(name, start, end, color = 0xffffff) {
+  const material = new THREE.LineBasicMaterial({ color });
+  const points = [start, end].map((p) => new THREE.Vector3(p.x, p.y, p.z));
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+  if (axisLines.has(name)) {
+    const line = axisLines.get(name);
+    line.geometry.dispose(); // Dispose of old geometry
+    line.geometry = geometry; // Replace with new geometry
+  } else {
+    const line = new THREE.Line(geometry, material);
+    scene.add(line);
+    axisLines.set(name, line);
+
+    console.log("axis lines -> set", name);
+  }
+}
+
+// Function to project a point onto a plane
+function projectPointOnPlane(point, planeNormal, planePosition) {
+  const direction = new THREE.Vector3().subVectors(point, planePosition); // Vector from plane to point
+  const dotProduct = direction.dot(planeNormal); // Find how much of the point's vector is in the direction of the normal
+  const projection = new THREE.Vector3().copy(planeNormal).multiplyScalar(dotProduct); // Project the vector
+  return new THREE.Vector3().subVectors(point, projection); // Subtract projection to get the point on the plane
+}
+
+// Update TEA projection on the newly created perpendicular plane
+function updateTEAProjectionOnPlane() {
+  if (landmarks.has("medialEpicondyle") && landmarks.has("lateralEpicondyle") && landmarks.has("femurCenter") && landmarks.has("hipCenter")) {
+    const medialEpicondyle = landmarks.get("medialEpicondyle").position;
+    const lateralEpicondyle = landmarks.get("lateralEpicondyle").position;
+    const femurCenter = landmarks.get("femurCenter").position;
+    const hipCenter = landmarks.get("hipCenter").position;
+    
+    // Direction of the TEA line (Medial Epicondyle to Lateral Epicondyle)
+    const TEADirection = new THREE.Vector3().subVectors(lateralEpicondyle, medialEpicondyle);
+
+    // Get the perpendicular plane created by Mechanical Axis
+    const axisLine = axisLines.get("MechanicalAxis");
+    const referencePoint = landmarks.get("hipCenter").position;
+    const start = axisLine.geometry.attributes.position.array.slice(0, 3);
+    const end = axisLine.geometry.attributes.position.array.slice(3, 6);
+    const startVector = new THREE.Vector3(start[0], start[1], start[2]);
+    const endVector = new THREE.Vector3(end[0], end[1], end[2]);
+    const axisDirection = new THREE.Vector3().subVectors(endVector, startVector).normalize();
+    
+    // Plane normal is the Mechanical Axis direction
+    const planeNormal = axisDirection;
+
+    // Project both Medial and Lateral Epicondyles onto the perpendicular plane
+    const projectedMedial = projectPointOnPlane(medialEpicondyle, planeNormal, referencePoint);
+    const projectedLateral = projectPointOnPlane(lateralEpicondyle, planeNormal, referencePoint);
+
+    // Create or update the projected TEA line on the plane
+    createOrUpdateLine("TEA_Projection", projectedMedial, projectedLateral, 0x00ffff); // Cyan for the projection line
+  }
+}
+
+// Function to update all lines based on landmark positions
+function updateLines() {
+  if (landmarks.has("femurCenter") && landmarks.has("hipCenter")) {
+    createOrUpdateLine(
+      "MechanicalAxis",
+      landmarks.get("femurCenter").position,
+      landmarks.get("hipCenter").position,
+      0xff0000
+    ); // Mechanical Axis
+
+    // Update or create the perpendicular plane for the Mechanical Axis
+    createOrUpdatePerpendicularPlane(
+      "MechanicalAxisPlane",
+      "MechanicalAxis",
+      "hipCenter", // Reference point for the plane
+      100,
+      0x888888
+    );
+
+    // Update TEA projection on the newly created perpendicular plane
+    updateTEAProjectionOnPlane(); // Project TEA on the plane
+  }
+
+  if (
+    landmarks.has("femurProximalCanal") &&
+    landmarks.has("femurDistalCanal")
+  ) {
+    createOrUpdateLine(
+      "AnatomicalAxis",
+      landmarks.get("femurProximalCanal").position,
+      landmarks.get("femurDistalCanal").position,
+      0x00ff00
+    ); // Anatomical Axis
+  }
+
+  if (landmarks.has("medialEpicondyle") && landmarks.has("lateralEpicondyle")) {
+    createOrUpdateLine(
+      "TEA",
+      landmarks.get("medialEpicondyle").position,
+      landmarks.get("lateralEpicondyle").position,
+      0x0000ff
+    ); // TEA
+  }
+
+  if (
+    landmarks.has("posteriorMedialPt") &&
+    landmarks.has("posteriorLateralPt")
+  ) {
+    createOrUpdateLine(
+      "PCA",
+      landmarks.get("posteriorMedialPt").position,
+      landmarks.get("posteriorLateralPt").position,
+      0xffff00
+    ); // PCA
+  }
+
+  // Update the perpendicular plane based on the Mechanical Axis
+  if (axisLines.has("MechanicalAxis")) {
+    createOrUpdatePerpendicularPlane("MechanicalAxis");
+    console.log("perpendicular plane -> set");
+  }
+}
+
+// Update lines when the "Update" button is clicked
+document.getElementById("updateButton").addEventListener("click", () => {
+  if (landmarks.size === 0) return;
+  lastClickedRadio = null;
+  updateLines();
+  updateRadioStyles(landmarks);
+});
+
+const perpendicularPlanes = new Map();
+
+// Create or Update a Perpendicular Plane to the Mechanical Axis
+function createOrUpdatePerpendicularPlane(
+  planeName,
+  axisName,
+  referencePointName,
+  size = 100,
+  color = 0x888888
+) {
+  if (!axisLines.has(axisName)) return; // Ensure axis exists
+  if (!landmarks.has(referencePointName)) return; // Ensure reference point exists
+
+  const axisLine = axisLines.get(axisName);
+  const referencePoint = landmarks.get(referencePointName).position;
+
+  // Get positions of the Mechanical Axis endpoints
+  const start = axisLine.geometry.attributes.position.array.slice(0, 3);
+  const end = axisLine.geometry.attributes.position.array.slice(3, 6);
+
+  const startVector = new THREE.Vector3(start[0], start[1], start[2]);
+  const endVector = new THREE.Vector3(end[0], end[1], end[2]);
+
+  // Calculate the direction of the axis (Mechanical Axis vector)
+  const axisDirection = new THREE.Vector3()
+    .subVectors(endVector, startVector)
+    .normalize();
+
+  // Check if the plane already exists
+  let planeMesh;
+  if (perpendicularPlanes.has(planeName)) {
+    planeMesh = perpendicularPlanes.get(planeName);
+  } else {
+    // Create a new plane if it doesn't exist
+    const planeGeometry = new THREE.PlaneGeometry(size, size);
+    const planeMaterial = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.5,
+    });
+    planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+    perpendicularPlanes.set(planeName, planeMesh);
+    scene.add(planeMesh);
+  }
+
+  // Set the plane's position to the reference point
+  planeMesh.position.copy(referencePoint);
+
+  // Set the plane's orientation to be perpendicular to the axis
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1), // Default plane normal (Z-axis)
+    axisDirection
+  );
+  planeMesh.setRotationFromQuaternion(quaternion);
+}
