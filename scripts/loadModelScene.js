@@ -61,22 +61,54 @@ export function loadModelScene() {
   // Load STL models
   const loadedMeshes = [];
   function loadSTLModel(path, color) {
-    new STLLoader().load(path, (geometry) => {
-      const material = new THREE.MeshStandardMaterial({ color });
-      const mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
-      loadedMeshes.push(mesh);
+    const loader = new STLLoader();
+    loader.load(
+      path,
+      (geometry) => {
+        const material = new THREE.MeshStandardMaterial({ color });
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        loadedMeshes.push(mesh);
 
-      if (loadedMeshes.length === 2)
-        fitCameraToObject(loadedMeshes, camera, controls);
-    });
+        if (loadedMeshes.length === 2) {
+          fitCameraToObject(loadedMeshes, camera, controls);
+          hideLoadingScreen();  // Hide loading once both models are loaded
+        }
+      },
+      (xhr) => {
+        // Update loading progress
+        const progress = (xhr.loaded / xhr.total) * 100;
+        updateLoadingScreen(progress); // Update progress bar or text
+      },
+      (error) => {
+        console.error("Error loading model:", error);
+        hideLoadingScreen();  // Hide loading if there's an error
+      }
+    );
   }
 
   loadSTLModel("./Right_Femur.stl", 0xa0a0a0);
   loadSTLModel("./Right_Tibia.stl", 0x60ee60);
 
+  // Show loading screen and progress
+  function showLoadingScreen() {
+    const loadingScreen = document.getElementById("loadingScreen");
+    loadingScreen.classList.remove('hidden');  // Show loading screen
+  }
+
+  function updateLoadingScreen(progress) {
+    const loadingScreen = document.getElementById("loadingScreen");
+    loadingScreen.innerHTML = `Loading... ${Math.round(progress)}%`; // Update text with progress
+  }
+
+  function hideLoadingScreen() {
+    const loadingScreen = document.getElementById("loadingScreen");
+    loadingScreen.classList.add('hidden');  // Hide loading screen when done
+  }
+
   // Main initialization function
   function init() {
+    showLoadingScreen(); // Show loading at the beginning
     setupLighting();
     setupCamera();
 
@@ -90,5 +122,5 @@ export function loadModelScene() {
   }
 
   init();
-  return { scene, camera, renderer, controls,loadedMeshes };
+  return { scene, camera, renderer, controls, loadedMeshes };
 }
