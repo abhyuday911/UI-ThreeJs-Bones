@@ -62,7 +62,57 @@
                 <button id="updateButton"
                     class="bg-blue-500 text-white px-4 py-2 rounded-lg w-full mt-6">Update</button>
             </div>
+            <div class="pointer-events-auto space-y-4 text-gray-400">
+                <!-- Varus/Valgus Button -->
+                <div class="flex flex items-center justify-between space-x-4">
+                    <button id="varus-valgus-decrement"
+                        class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">-</button>
+                    <label id="varus-valgus" for="varus-valgus" class="font-semibold text-lg">Varus/Valgus (0°)</label>
+                    <button id="varus-valgus-increment"
+                        class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">+</button>
 
+
+                </div>
+
+                <!-- Flexion/Extension Button -->
+                <div class="flex flex items-center justify-between space-x-4">
+                    <button id="flexion-extension-decrement"
+                        class="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600">-</button>
+                    <label id="flexion-extension" for="flexion-extension"
+                        class="font-semibold text-lg">Flexion/Extension (0°)</label>
+                    <button id="flexion-extension-increment"
+                        class="bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600">+</button>
+
+
+
+                </div>
+
+                <!-- Distal Medial Resection Button -->
+                <div class="flex flex items-center justify-between space-x-4">
+                    <button id="distal-medial-resection-decrement"
+                        class="bg-orange-500 text-white py-2 px-4 rounded hover:bg-orange-600">-</button>
+                    <label id="distal-medial-resection" for="distal-medial-resection"
+                        class="font-semibold text-lg">Distal Medial Resection
+                        (10 mm)</label>
+                    <button id="distal-medial-resection-increment"
+                        class="bg-orange-500 text-white py-2 px-4 rounded hover:bg-orange-600">+</button>
+
+
+                </div>
+
+                <!-- Toggle Button -->
+                <div class="flex flex items-center justify-between space-x-4 bg-stone-900 p-3 px-2 rounded-lg">
+                    <label class="inline-flex justify-between items-center cursor-pointer w-full">
+                        <input type="checkbox" id="resectionToggle" class="sr-only peer">
+                        <div
+                            class="relative w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600">
+                        </div>
+                        <span class="ms-3 px-1 font-semibold text-lg text-gray-900 dark:text-gray-300">Resection
+                            Visibility</span>
+                    </label>
+                </div>
+
+            </div>
         </div>
     </main>
     <script type="module" src="./script.js"></script>

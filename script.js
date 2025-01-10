@@ -1,79 +1,12 @@
 import * as THREE from "three";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { loadModelScene } from "./scripts/loadModelScene";
+const { scene, camera, renderer, controls, loadedMeshes } = loadModelScene();
 
-// Initialize scene, camera, and renderer
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  3000
-);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.querySelector("main").appendChild(renderer.domElement);
-
-// Add OrbitControls
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.enableZoom = true;
-
-// Set up lighting
-function setupLighting() {
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 5);
-  directionalLight.position.set(10, 10, -50).normalize();
-  scene.add(directionalLight);
-  const ambientLight = new THREE.AmbientLight(0xffffff, 1);
-  scene.add(ambientLight);
-}
-
-// Setup camera
-function setupCamera() {
-  camera.position.set(0, 50, 300);
-  camera.lookAt(0, 0, 0);
-  controls.update(); // Ensure controls sync with initial camera position
-}
-
-// Camera fitting function
-function fitCameraToObject(objects, camera, controls) {
-  const box = new THREE.Box3();
-  objects.forEach((obj) => box.expandByObject(obj));
-
-  const size = new THREE.Vector3();
-  box.getSize(size);
-
-  const center = new THREE.Vector3();
-  box.getCenter(center);
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-
-  camera.position.set(center.x, -(center.y + maxSize), center.z);
-  camera.lookAt(center);
-
-  if (controls) {
-    controls.target.set(center.x, center.y, center.z);
-    controls.update();
-  }
-}
-
-// Load STL models
-const loadedMeshes = [];
-function loadSTLModel(path, color) {
-  new STLLoader().load(path, (geometry) => {
-    const material = new THREE.MeshStandardMaterial({ color });
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-    loadedMeshes.push(mesh);
-
-    if (loadedMeshes.length === 2)
-      fitCameraToObject(loadedMeshes, camera, controls);
-  });
-}
-
-loadSTLModel("./Right_Femur.stl", 0xa0a0a0);
-loadSTLModel("./Right_Tibia.stl", 0x00cc00);
+const perpendicularPlanes = new Map();
+let rotationAngle = Math.PI / 180; // Define the rotation angle for each click (1 degrees)
+let varusValgusAngle = 0;
+let flexionExtensionAngle = 0;
+let DistalResectionPlane = 10;
 
 // Landmark interaction setup
 const raycaster = new THREE.Raycaster();
@@ -83,6 +16,53 @@ const axisLines = new Map();
 let isDragging = false;
 let selectedLandmark = null;
 let lastClickedRadio = null;
+
+// Global function to update all dependent objects dynamically
+function updateDependentObjects() {
+  updateLines();
+  updateRadioStyles(landmarks);
+
+  createAnteriorLine();
+  createOrUpdatePerpendicularPlane(
+    "VarusValgusPlane",
+    "MechanicalAxis",
+    "femurCenter",
+    100,
+    0x3b82f6 // bg-blue-500
+  );
+
+  createFlexionExtensionLine();
+  createOrUpdatePerpendicularPlane(
+    "FlexionExtensionPlane", // New name for the Flexion/Extension Plane
+    "MechanicalAxis", // Axis to align the plane with
+    "femurCenter", // Reference point for positioning
+    100, // Plane size
+    0x22c55e // Plane color (Greenish)
+  );
+
+  rotateVarusValgusPlane(1, rotationAngle * varusValgusAngle);
+  rotateFlexionExtensionPlane(1, rotationAngle * flexionExtensionAngle);
+
+  createParallelPlaneThroughPoint(
+    "FlexionExtensionPlane",
+    landmarks.get("distalMedialPt").position,
+    "DistalMedialPlane",
+    150,
+    0x880000
+  );
+
+  const distalMedialPoint = landmarks.get("distalMedialPt").position;
+  const proximalOffset = new THREE.Vector3(0, 0, DistalResectionPlane);
+  const newLandmarkPoint = distalMedialPoint.clone().add(proximalOffset);
+
+  createParallelPlaneThroughPoint(
+    "DistalMedialPlane",
+    newLandmarkPoint,
+    "DistalResectionPlane",
+    130,
+    0xf97316
+  );
+}
 
 function createOrUpdateLandmark(position, name, color = 0xff0000) {
   const existingLandmark = landmarks.get(name);
@@ -99,11 +79,6 @@ function createOrUpdateLandmark(position, name, color = 0xff0000) {
     scene.add(landmark);
     landmarks.set(name, landmark);
   }
-}
-
-// Function to get the most recently clicked active radio button
-function getActiveRadioButton(landmarks) {
-  return lastClickedRadio ? lastClickedRadio.id : null;
 }
 
 // Function to update other radios and their corresponding landmarks
@@ -153,7 +128,7 @@ document.addEventListener("click", (event) => {
 
 // Main interaction logic
 window.addEventListener("click", (event) => {
-  const activeRadio = getActiveRadioButton(landmarks);
+  const activeRadio = lastClickedRadio ? lastClickedRadio.id : null;
 
   if (!activeRadio) return; // No active radio, skip
   if (landmarks.has(activeRadio)) return; // Landmark already exists, skip
@@ -206,8 +181,7 @@ window.addEventListener("mousemove", (event) => {
       landmark.position.copy(newPosition); // Sync position with the map
     }
 
-    // Recalculate and update all lines
-    updateLines();
+    updateDependentObjects(); // Update dependent objects
   }
 });
 
@@ -225,22 +199,6 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-// Main initialization function
-function init() {
-  setupLighting();
-  setupCamera();
-
-  // Animation loop
-  function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  }
-  animate();
-}
-
-init();
 
 // Create or update a line between two points
 function createOrUpdateLine(name, start, end, color = 0xffffff) {
@@ -261,43 +219,65 @@ function createOrUpdateLine(name, start, end, color = 0xffffff) {
   }
 }
 
-// Function to project a point onto a plane
-function projectPointOnPlane(point, planeNormal, planePosition) {
-  const direction = new THREE.Vector3().subVectors(point, planePosition); // Vector from plane to point
-  const dotProduct = direction.dot(planeNormal); // Find how much of the point's vector is in the direction of the normal
-  const projection = new THREE.Vector3().copy(planeNormal).multiplyScalar(dotProduct); // Project the vector
-  return new THREE.Vector3().subVectors(point, projection); // Subtract projection to get the point on the plane
+// Helper function to project a point onto a plane
+function projectPointOnPlane(point, planeNormal, planePoint) {
+  const pointVector = new THREE.Vector3(point.x, point.y, point.z);
+  const planePointVector = new THREE.Vector3(
+    planePoint.x,
+    planePoint.y,
+    planePoint.z
+  );
+  const planeToPoint = new THREE.Vector3().subVectors(
+    pointVector,
+    planePointVector
+  );
+  const distance = planeToPoint.dot(planeNormal); // Distance to plane
+  return pointVector.sub(planeNormal.clone().multiplyScalar(distance)); // Projected point
 }
 
 // Update TEA projection on the newly created perpendicular plane
 function updateTEAProjectionOnPlane() {
-  if (landmarks.has("medialEpicondyle") && landmarks.has("lateralEpicondyle") && landmarks.has("femurCenter") && landmarks.has("hipCenter")) {
+  if (
+    landmarks.has("medialEpicondyle") &&
+    landmarks.has("lateralEpicondyle") &&
+    landmarks.has("femurCenter")
+  ) {
     const medialEpicondyle = landmarks.get("medialEpicondyle").position;
     const lateralEpicondyle = landmarks.get("lateralEpicondyle").position;
-    const femurCenter = landmarks.get("femurCenter").position;
-    const hipCenter = landmarks.get("hipCenter").position;
-    
-    // Direction of the TEA line (Medial Epicondyle to Lateral Epicondyle)
-    const TEADirection = new THREE.Vector3().subVectors(lateralEpicondyle, medialEpicondyle);
 
     // Get the perpendicular plane created by Mechanical Axis
     const axisLine = axisLines.get("MechanicalAxis");
-    const referencePoint = landmarks.get("hipCenter").position;
+    const referencePoint = landmarks.get("femurCenter").position; // Updated reference point
     const start = axisLine.geometry.attributes.position.array.slice(0, 3);
     const end = axisLine.geometry.attributes.position.array.slice(3, 6);
     const startVector = new THREE.Vector3(start[0], start[1], start[2]);
     const endVector = new THREE.Vector3(end[0], end[1], end[2]);
-    const axisDirection = new THREE.Vector3().subVectors(endVector, startVector).normalize();
-    
+    const axisDirection = new THREE.Vector3()
+      .subVectors(endVector, startVector)
+      .normalize();
+
     // Plane normal is the Mechanical Axis direction
     const planeNormal = axisDirection;
 
     // Project both Medial and Lateral Epicondyles onto the perpendicular plane
-    const projectedMedial = projectPointOnPlane(medialEpicondyle, planeNormal, referencePoint);
-    const projectedLateral = projectPointOnPlane(lateralEpicondyle, planeNormal, referencePoint);
+    const projectedMedial = projectPointOnPlane(
+      medialEpicondyle,
+      planeNormal,
+      referencePoint
+    );
+    const projectedLateral = projectPointOnPlane(
+      lateralEpicondyle,
+      planeNormal,
+      referencePoint
+    );
 
     // Create or update the projected TEA line on the plane
-    createOrUpdateLine("TEA_Projection", projectedMedial, projectedLateral, 0x00ffff); // Cyan for the projection line
+    createOrUpdateLine(
+      "TEA_Projection",
+      projectedMedial,
+      projectedLateral,
+      0x00ffff
+    ); // Cyan for the projection line
   }
 }
 
@@ -315,7 +295,7 @@ function updateLines() {
     createOrUpdatePerpendicularPlane(
       "MechanicalAxisPlane",
       "MechanicalAxis",
-      "hipCenter", // Reference point for the plane
+      "femurCenter", // Reference point for the plane
       100,
       0x888888
     );
@@ -368,11 +348,8 @@ function updateLines() {
 document.getElementById("updateButton").addEventListener("click", () => {
   if (landmarks.size === 0) return;
   lastClickedRadio = null;
-  updateLines();
-  updateRadioStyles(landmarks);
+  updateDependentObjects();
 });
-
-const perpendicularPlanes = new Map();
 
 // Create or Update a Perpendicular Plane to the Mechanical Axis
 function createOrUpdatePerpendicularPlane(
@@ -411,7 +388,7 @@ function createOrUpdatePerpendicularPlane(
       color,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.5,
+      opacity: 0.8,
     });
     planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
     perpendicularPlanes.set(planeName, planeMesh);
@@ -427,4 +404,290 @@ function createOrUpdatePerpendicularPlane(
     axisDirection
   );
   planeMesh.setRotationFromQuaternion(quaternion);
+
+  return;
 }
+
+function createAnteriorLine() {
+  if (!landmarks.has("femurCenter") || !axisLines.has("TEA_Projection")) {
+    console.error("Femur Center or TEA Projection not found!");
+    return;
+  }
+
+  // Get Femur Center position
+  const femurCenter = landmarks.get("femurCenter").position;
+
+  // Get TEA Projection axis direction
+  const teaLine = axisLines.get("TEA_Projection");
+  const start = new THREE.Vector3(
+    teaLine.geometry.attributes.position.array[0],
+    teaLine.geometry.attributes.position.array[1],
+    teaLine.geometry.attributes.position.array[2]
+  );
+  const end = new THREE.Vector3(
+    teaLine.geometry.attributes.position.array[3],
+    teaLine.geometry.attributes.position.array[4],
+    teaLine.geometry.attributes.position.array[5]
+  );
+
+  const teaDirection = new THREE.Vector3().subVectors(end, start).normalize();
+
+  // Calculate a vector perpendicular to TEA direction
+  const anteriorDirection = new THREE.Vector3(0, 0, 1)
+    .cross(teaDirection)
+    .normalize();
+
+  // Scale the perpendicular vector to 10mm
+  const anteriorPoint = new THREE.Vector3().addVectors(
+    femurCenter,
+    anteriorDirection.multiplyScalar(10)
+  );
+
+  // Create the anterior line
+  createOrUpdateLine("AnteriorLine", femurCenter, anteriorPoint, 0xff00ff); // Magenta for anterior line
+
+  // Create or update the plane using the anterior line
+}
+
+function rotateVarusValgusPlane(direction, rotateBy) {
+  // Get the anterior line
+  const anteriorLine = axisLines.get("AnteriorLine");
+
+  // Extract start and end points of the anterior line
+  const start = new THREE.Vector3(
+    anteriorLine.geometry.attributes.position.array[0],
+    anteriorLine.geometry.attributes.position.array[1],
+    anteriorLine.geometry.attributes.position.array[2]
+  );
+  const end = new THREE.Vector3(
+    anteriorLine.geometry.attributes.position.array[3],
+    anteriorLine.geometry.attributes.position.array[4],
+    anteriorLine.geometry.attributes.position.array[5]
+  );
+
+  // Calculate the direction of the anterior line
+  const anteriorLineDirection = new THREE.Vector3()
+    .subVectors(end, start)
+    .normalize();
+
+  // Create a quaternion to represent the rotation around the anterior line
+  const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(
+    anteriorLineDirection, // Axis of rotation is the anterior line direction
+    direction * rotateBy // Angle to rotate
+  );
+
+  // Apply the rotation to the VarusValgusPlane
+  const plane = perpendicularPlanes.get("VarusValgusPlane");
+
+  // Rotate the plane by applying the rotation quaternion
+  plane.rotation.setFromQuaternion(rotationQuaternion);
+  // Update the perpendicularPlanes collection
+  perpendicularPlanes.set("VarusValgusPlane", plane);
+}
+
+function createFlexionExtensionLine() {
+  if (!landmarks.has("femurCenter") || !axisLines.has("AnteriorLine")) {
+    console.error("Femur Center or AnteriorLine Projection not found!");
+    return;
+  }
+
+  // Get Femur Center position
+  const femurCenter = landmarks.get("femurCenter").position;
+
+  // Get TEA Projection axis direction
+  const AnteriorLine = axisLines.get("AnteriorLine");
+  const start = new THREE.Vector3(
+    AnteriorLine.geometry.attributes.position.array[0],
+    AnteriorLine.geometry.attributes.position.array[1],
+    AnteriorLine.geometry.attributes.position.array[2]
+  );
+  const end = new THREE.Vector3(
+    AnteriorLine.geometry.attributes.position.array[3],
+    AnteriorLine.geometry.attributes.position.array[4],
+    AnteriorLine.geometry.attributes.position.array[5]
+  );
+
+  const AnteriorLineDirection = new THREE.Vector3()
+    .subVectors(end, start)
+    .normalize();
+
+  // Calculate a vector perpendicular to TEA direction
+  const lateralDirection = new THREE.Vector3(0, 0, 1)
+    .cross(AnteriorLineDirection)
+    .normalize();
+
+  // Scale the perpendicular vector to 10mm
+  const lateralEndPoint = new THREE.Vector3().addVectors(
+    femurCenter,
+    lateralDirection.multiplyScalar(-10)
+  );
+
+  // Create the lateral line from femur center to the lateral end point (10mm in the X direction)
+  createOrUpdateLine("LateralLine", femurCenter, lateralEndPoint, 0x0000ff); // Blue for lateral line
+}
+
+// Function to rotate the Flexion/Extension plane
+function rotateFlexionExtensionPlane(direction, rotateBy) {
+  const lateralLine = axisLines.get("LateralLine");
+
+  // Extract start and end points of the anterior line
+  const start = new THREE.Vector3(
+    lateralLine.geometry.attributes.position.array[0],
+    lateralLine.geometry.attributes.position.array[1],
+    lateralLine.geometry.attributes.position.array[2]
+  );
+  const end = new THREE.Vector3(
+    lateralLine.geometry.attributes.position.array[3],
+    lateralLine.geometry.attributes.position.array[4],
+    lateralLine.geometry.attributes.position.array[5]
+  );
+
+  // Calculate the direction of the anterior line
+  const lateralLineDirection = new THREE.Vector3()
+    .subVectors(end, start)
+    .normalize();
+
+  // Create a quaternion to represent the rotation around the anterior line
+  const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(
+    lateralLineDirection, // Axis of rotation is the anterior line direction
+    direction * rotateBy // Angle to rotate
+  );
+
+  // Apply the rotation to the Flexion/Extension plane
+  const plane = perpendicularPlanes.get("FlexionExtensionPlane");
+
+  // Rotate the plane by applying the rotation quaternion
+  plane.rotation.setFromQuaternion(rotationQuaternion);
+  // Update the perpendicularPlanes collection, if needed
+  perpendicularPlanes.set("FlexionExtensionPlane", plane);
+
+  // Update the parallel planes to keep them aligned
+  const planesToUpdate = ["DistalMedialPlane", "DistalResectionPlane"];
+
+  planesToUpdate.forEach((planeName) => {
+    const planeMesh = perpendicularPlanes.get(planeName);
+    if (planeMesh) {
+      // Apply the same rotation to the parallel plane to maintain parallelism
+      planeMesh.rotation.setFromQuaternion(rotationQuaternion);
+    }
+  });
+}
+
+function createParallelPlaneThroughPoint(
+  referencePlaneName,
+  landmarkPoint,
+  newPlaneName,
+  size = 100,
+  color = 0x888888
+) {
+  // Retrieve the reference plane (e.g., Flexion/Extension Plane)
+  let referencePlane = perpendicularPlanes.get(referencePlaneName);
+  if (!referencePlane) {
+    console.error(`${referencePlaneName} not found!`);
+    return;
+  }
+
+  // Retrieve the normal of the reference plane
+  const referencePlaneNormal = new THREE.Vector3(0, 0, 1); // Default normal (Z-axis)
+  referencePlane.localToWorld(referencePlaneNormal); // Transform the normal from local space to world space
+
+  let newPlaneMesh = perpendicularPlanes.get(newPlaneName);
+  if (newPlaneMesh) {
+    newPlaneMesh.position.copy(landmarkPoint);
+    perpendicularPlanes.set(newPlaneName, newPlaneMesh);
+  } else {
+    const newPlaneGeometry = new THREE.PlaneGeometry(size, size);
+    const newPlaneMaterial = new THREE.MeshBasicMaterial({
+      color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.3,
+    });
+
+    newPlaneMesh = new THREE.Mesh(newPlaneGeometry, newPlaneMaterial);
+    newPlaneMesh.position.copy(landmarkPoint);
+
+    perpendicularPlanes.set(newPlaneName, newPlaneMesh);
+    scene.add(newPlaneMesh);
+  }
+}
+
+document
+  .getElementById("varus-valgus-increment")
+  .addEventListener("click", () => {
+    varusValgusAngle += 1;
+    rotateVarusValgusPlane(1, rotationAngle * varusValgusAngle);
+    document.getElementById(
+      "varus-valgus"
+    ).innerText = `Varus/Valgus (${varusValgusAngle}°)`;
+  });
+
+document
+  .getElementById("varus-valgus-decrement")
+  .addEventListener("click", () => {
+    varusValgusAngle -= 1;
+    rotateVarusValgusPlane(1, rotationAngle * varusValgusAngle);
+    document.getElementById(
+      "varus-valgus"
+    ).innerText = `Varus/Valgus (${varusValgusAngle}°)`;
+  });
+
+document
+  .getElementById("flexion-extension-increment")
+  .addEventListener("click", () => {
+    flexionExtensionAngle += 1;
+    rotateFlexionExtensionPlane(1, rotationAngle * flexionExtensionAngle);
+    document.getElementById(
+      "flexion-extension"
+    ).innerText = `Flexion/Extension (${flexionExtensionAngle}°)`;
+  });
+
+document
+  .getElementById("flexion-extension-decrement")
+  .addEventListener("click", () => {
+    flexionExtensionAngle -= 1;
+    rotateFlexionExtensionPlane(1, rotationAngle * flexionExtensionAngle);
+    document.getElementById(
+      "flexion-extension"
+    ).innerText = `Flexion/Extension (${flexionExtensionAngle}°)`;
+  });
+
+document
+  .getElementById("distal-medial-resection-decrement")
+  .addEventListener("click", () => {
+    DistalResectionPlane -= 1;
+    document.getElementById(
+      "distal-medial-resection"
+    ).innerText = `Distal Medial Resection (${DistalResectionPlane}mm)`;
+    const distalMedialPoint = landmarks.get("distalMedialPt").position;
+    const proximalOffset = new THREE.Vector3(0, 0, DistalResectionPlane);
+    const newLandmarkPoint = distalMedialPoint.clone().add(proximalOffset);
+
+    createParallelPlaneThroughPoint(
+      "DistalMedialPlane",
+      newLandmarkPoint,
+      "DistalResectionPlane",
+      130,
+      0xffff00
+    );
+  });
+
+document
+  .getElementById("distal-medial-resection-increment")
+  .addEventListener("click", () => {
+    DistalResectionPlane += 1;
+    document.getElementById(
+      "distal-medial-resection"
+    ).innerText = `Distal Medial Resection (${DistalResectionPlane}mm)`;
+    const distalMedialPoint = landmarks.get("distalMedialPt").position;
+    const proximalOffset = new THREE.Vector3(0, 0, DistalResectionPlane);
+    const newLandmarkPoint = distalMedialPoint.clone().add(proximalOffset);
+
+    createParallelPlaneThroughPoint(
+      "DistalMedialPlane",
+      newLandmarkPoint,
+      "DistalResectionPlane",
+      130,
+      0xf97316
+    );
+  });
